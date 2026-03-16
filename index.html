@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Update smartlink</title>
+    <style>
+        body {
+            background-color: #111;
+            color: #eee;
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .box {
+            background: #222;
+            padding: 30px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+        }
+        h2 { margin-top: 0; text-align: center; color: #4CAF50; }
+        label { display: block; margin-top: 15px; font-size: 14px; color: #aaa; }
+        input, select {
+            width: 100%;
+            padding: 12px;
+            margin-top: 5px;
+            background: #333;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            margin-top: 25px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background: #45a049; }
+        button:disabled { background: #555; cursor: wait; }
+        .msg {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 13px;
+            display: none;
+        }
+        .ok { background: rgba(76, 175, 80, 0.2); color: #4CAF50; border: 1px solid #4CAF50; }
+        .err { background: rgba(244, 67, 54, 0.2); color: #f44336; border: 1px solid #f44336; }
+    </style>
+</head>
+<body>
+
+<div class="box">
+    <h2>update smartlink</h2>
+    
+    <label>Pilih Repository:</label>
+    <select id="repoName">
+        <option value="KAHF">KAHF</option>
+        <option value="newkahf">newkahf</option>
+        <option value="landing-kahf-1766161652367">landing-kahf</option>
+    </select>
+
+    <label>Smartlink Baru:</label>
+    <input type="text" id="newLink" placeholder="Paste link smartlink disini...">
+
+    <label>GitHub Token:</label>
+    <input type="password" id="token" placeholder="ghp_xxxx...">
+
+    <button id="btn" onclick="updateLink()">UPDATE SEKARANG</button>
+    <div id="msg" class="msg"></div>
+</div>
+
+<script>
+    const USERNAME = "kramat11"; // Otomatis pakai username ini
+    const FILENAME = "index.html";
+
+    // Load token tersimpan
+    window.onload = () => {
+        const savedToken = localStorage.getItem('kahf_token');
+        if(savedToken) document.getElementById('token').value = savedToken;
+    };
+
+    async function updateLink() {
+        const repo = document.getElementById('repoName').value;
+        const link = document.getElementById('newLink').value.trim();
+        const token = document.getElementById('token').value.trim();
+        const btn = document.getElementById('btn');
+        const msg = document.getElementById('msg');
+
+        if(!link || !token) {
+            showMsg("Isi link dan token dulu!", "err");
+            return;
+        }
+
+        // Simpan token biar gak ketik ulang
+        localStorage.setItem('kahf_token', token);
+
+        btn.disabled = true;
+        btn.innerText = "Sedang Proses...";
+        showMsg("Menghubungi GitHub...", "ok");
+
+        try {
+            const url = `https://api.github.com/repos/${USERNAME}/${repo}/contents/${FILENAME}`;
+            
+            // 1. Ambil File
+            const res = await fetch(url, {
+                headers: { 'Authorization': `token ${token}` }
+            });
+
+            if(!res.ok) throw new Error("Gagal ambil file. Cek repo/token.");
+            
+            const data = await res.json();
+            const content = atob(data.content);
+
+            // 2. Ganti Link
+            const regex = /const SMARTLINK = ".*?";/;
+            if(!regex.test(content)) throw new Error("Tidak ketemu 'const SMARTLINK' di file.");
+
+            const newContent = content.replace(regex, `const SMARTLINK = "${link}";`);
+            const encodedContent = btoa(newContent);
+
+            // 3. Push Update
+            const putRes = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `token ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: "Update Smartlink",
+                    content: encodedContent,
+                    sha: data.sha
+                })
+            });
+
+            if(!putRes.ok) throw new Error("Gagal update. Pastikan Token punya akses 'repo'.");
+
+            showMsg("✅ Berhasil! Website sedang di-deploy ulang.", "ok");
+
+        } catch (e) {
+            showMsg("Error: " + e.message, "err");
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "UPDATE SEKARANG";
+        }
+    }
+
+    function showMsg(txt, type) {
+        const el = document.getElementById('msg');
+        el.style.display = 'block';
+        el.className = 'msg ' + type;
+        el.innerText = txt;
+    }
+</script>
+
+</body>
+</html>
