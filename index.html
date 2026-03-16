@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Update smartlink</title>
+    <title>Update Smartlink</title>
     <style>
         body {
             background-color: #111;
@@ -14,7 +14,22 @@
             align-items: center;
             height: 100vh;
             margin: 0;
+            
+            /* SECURITY: DISABLE TEXT SELECTION */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
+
+        /* SECURITY: INPUTS HARUS BISA DIPILIH */
+        input, select, textarea {
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
+        }
+
         .box {
             background: #222;
             padding: 30px;
@@ -22,6 +37,8 @@
             width: 90%;
             max-width: 400px;
             box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+            position: relative;
+            z-index: 10;
         }
         h2 { margin-top: 0; text-align: center; color: #4CAF50; }
         label { display: block; margin-top: 15px; font-size: 14px; color: #aaa; }
@@ -56,15 +73,17 @@
             text-align: center;
             font-size: 13px;
             display: none;
+            line-height: 1.4;
         }
         .ok { background: rgba(76, 175, 80, 0.2); color: #4CAF50; border: 1px solid #4CAF50; }
         .err { background: rgba(244, 67, 54, 0.2); color: #f44336; border: 1px solid #f44336; }
     </style>
 </head>
-<body>
+<!-- SECURITY: DISABLE RIGHT CLICK, SELECT, DRAG -->
+<body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
 
 <div class="box">
-    <h2>update smartlink</h2>
+    <h2>Update Smartlink</h2>
     
     <label>Pilih Repository:</label>
     <select id="repoName">
@@ -74,18 +93,21 @@
     </select>
 
     <label>Smartlink Baru:</label>
-    <input type="text" id="newLink" placeholder="Paste link smartlink disini...">
+    <input type="text" id="newLink" placeholder="">
 
     <label>GitHub Token:</label>
-    <input type="password" id="token" placeholder="ghp_xxxx...">
+    <input type="password" id="token" placeholder="">
 
     <button id="btn" onclick="updateLink()">UPDATE SEKARANG</button>
     <div id="msg" class="msg"></div>
 </div>
 
 <script>
-    const USERNAME = "kramat11"; // Otomatis pakai username ini
+    const USERNAME = "kramat11";
     const FILENAME = "index.html";
+    
+    // BASE URL TRACKER (HARDCODED DI SCRIPT)
+    const BASE_TRACKER = "https://imopol.dasboardkramat.workers.dev/track?cid=";
 
     // Load token tersimpan
     window.onload = () => {
@@ -97,6 +119,7 @@
         const repo = document.getElementById('repoName').value;
         const link = document.getElementById('newLink').value.trim();
         const token = document.getElementById('token').value.trim();
+        
         const btn = document.getElementById('btn');
         const msg = document.getElementById('msg');
 
@@ -105,12 +128,23 @@
             return;
         }
 
-        // Simpan token biar gak ketik ulang
+        // LOGIKA OTOMATIS: EKSTRAK ID DARI SMARTLINK
+        const sub1Match = link.match(/[?&]sub1=([^&#]*)/);
+        const extractedID = sub1Match ? sub1Match[1] : null;
+
+        if (!extractedID) {
+            showMsg("Error: Pastikan Smartlink memiliki parameter '?sub1=ID'", "err");
+            return;
+        }
+
+        // GABUNGKAN BASE TRACKER DENGAN ID
+        const finalTracker = BASE_TRACKER + extractedID;
+
         localStorage.setItem('kahf_token', token);
 
         btn.disabled = true;
         btn.innerText = "Sedang Proses...";
-        showMsg("Menghubungi GitHub...", "ok");
+        showMsg("Sedang Update Smartlink & Tracking...", "ok");
 
         try {
             const url = `https://api.github.com/repos/${USERNAME}/${repo}/contents/${FILENAME}`;
@@ -123,16 +157,21 @@
             if(!res.ok) throw new Error("Gagal ambil file. Cek repo/token.");
             
             const data = await res.json();
-            const content = atob(data.content);
+            let content = atob(data.content);
 
-            // 2. Ganti Link
-            const regex = /const SMARTLINK = ".*?";/;
-            if(!regex.test(content)) throw new Error("Tidak ketemu 'const SMARTLINK' di file.");
+            // 2. Ganti Link Smartlink
+            const smartlinkRegex = /const SMARTLINK = ".*?";/;
+            if(!smartlinkRegex.test(content)) throw new Error("Tidak ketemu 'const SMARTLINK' di file.");
+            content = content.replace(smartlinkRegex, `const SMARTLINK = "${link}";`);
 
-            const newContent = content.replace(regex, `const SMARTLINK = "${link}";`);
-            const encodedContent = btoa(newContent);
+            // 3. Ganti Link Tracking Pixel (OTOMATIS BERDASARKAN ID)
+            const trackerRegex = /const TRACKING_PIXEL = ".*?";/;
+            if(!trackerRegex.test(content)) throw new Error("Tidak ketemu 'const TRACKING_PIXEL' di file.");
+            content = content.replace(trackerRegex, `const TRACKING_PIXEL = "${finalTracker}";`);
 
-            // 3. Push Update
+            const encodedContent = btoa(content);
+
+            // 4. Push Update
             const putRes = await fetch(url, {
                 method: 'PUT',
                 headers: {
@@ -140,7 +179,7 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    message: "Update Smartlink",
+                    message: "Update Smartlink & Sync Tracking",
                     content: encodedContent,
                     sha: data.sha
                 })
@@ -148,7 +187,7 @@
 
             if(!putRes.ok) throw new Error("Gagal update. Pastikan Token punya akses 'repo'.");
 
-            showMsg("✅ Berhasil! Website sedang di-deploy ulang.", "ok");
+            showMsg("✅ Berhasil! otomatis disesuaikan.", "ok");
 
         } catch (e) {
             showMsg("Error: " + e.message, "err");
@@ -164,6 +203,45 @@
         el.className = 'msg ' + type;
         el.innerText = txt;
     }
+
+    /* 
+       =======================================================
+       SECURITY SYSTEM: ANTI-DEBUG & ANTI-INSPECT
+       =======================================================
+    */
+
+    // Mencegah Shortcuts
+    document.addEventListener('keydown', function(e) {
+        const isTyping = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT');
+        if (isTyping) return;
+
+        if(e.keyCode == 123) { 
+            alert("Akses Ditolak."); return false; 
+        }
+        if(e.ctrlKey && e.shiftKey && e.keyCode == 'I'.charCodeAt(0)) { 
+            alert("Akses Ditolak."); return false; 
+        }
+        if(e.ctrlKey && e.keyCode == 'U'.charCodeAt(0)) { 
+            alert("Akses Ditolak."); return false; 
+        }
+        if(e.ctrlKey && e.keyCode == 'S'.charCodeAt(0)) { 
+            e.preventDefault(); alert("Akses Ditolak."); return false; 
+        }
+        if(e.ctrlKey && e.keyCode == 'C'.charCodeAt(0)) { 
+            alert("Akses Ditolak."); return false; 
+        }
+    });
+
+    // Loop Debugger
+    setInterval(function() {
+        const startTime = performance.now();
+        debugger; 
+        const endTime = performance.now();
+        if (endTime - startTime > 100) {
+            // window.location.reload();
+        }
+    }, 1000);
+
 </script>
 
 </body>
